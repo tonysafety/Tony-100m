@@ -1,0 +1,435 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LedgerType {
+  personal
+  business
+}
+
+enum AccountType {
+  bank
+  cash
+  investment
+  creditcard
+  loan
+}
+
+enum TransactionType {
+  income
+  expense
+  transfer
+}
+
+enum RecurrenceFrequency {
+  once
+  daily
+  weekly
+  monthly
+  yearly
+}
+
+enum VehicleExpenseType {
+  license
+  inspection
+  insurance
+  maintenance
+  parking
+  fuel
+  car_wash
+  rental
+  toll
+  other
+}
+
+enum AssetType {
+  property
+  vehicle
+  investment
+  other
+}
+
+enum LiabilityType {
+  mortgage
+  personal_loan
+  creditcard
+  other
+}
+
+enum MaritalStatus {
+  single
+  married
+  separated
+  divorced
+  widowed
+}
+
+enum TaxDeductionType {
+  mpf
+  charitable_donation
+  home_loan_interest
+  qualifying_premium
+  self_education
+  elderly_residential_care
+  other
+}
+
+enum TaxAllowanceType {
+  basic
+  married
+  child
+  dependent_parent
+  dependent_grandparent
+  single_parent
+  disability
+  other
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions         Session[]
+  ledgers          Ledger[]
+  businessProfiles BusinessProfile[]
+  taxYears         TaxYear[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Ledger {
+  id        String     @id @default(cuid())
+  userId    String
+  type      LedgerType
+  name      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts          Account[]
+  categories        Category[]
+  tags              Tag[]
+  transactions      Transaction[]
+  scheduledItems    ScheduledItem[]
+  assets            Asset[]
+  liabilities       Liability[]
+  vehicles          Vehicle[]
+  vehicleExpenses   VehicleExpense[]
+
+  @@index([userId, type])
+}
+
+model Account {
+  id               String      @id @default(cuid())
+  ledgerId         String
+  name             String
+  type             AccountType
+  institution      String?
+  currency         String      @default("HKD")
+  includeInNetWorth Boolean    @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  ledger      Ledger                  @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  snapshots   AccountBalanceSnapshot[]
+  txns        Transaction[]            @relation("AccountTransactions")
+  txnsTo      Transaction[]            @relation("TransferAccountTransactions")
+  scheduled   ScheduledItem[]          @relation("AccountScheduledItems")
+  scheduledTo ScheduledItem[]          @relation("TransferAccountScheduledItems")
+
+  @@index([ledgerId])
+  @@unique([ledgerId, name])
+}
+
+model AccountBalanceSnapshot {
+  id        String   @id @default(cuid())
+  accountId String
+  asOfDate  DateTime
+  balanceCents Int
+  note      String?
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, asOfDate])
+  @@unique([accountId, asOfDate])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  ledgerId  String
+  name      String
+  parentId  String?
+  sortOrder Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ledger  Ledger      @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  parent  Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+  transactions Transaction[]
+  scheduledItems ScheduledItem[]
+
+  @@index([ledgerId])
+  @@unique([ledgerId, name])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  ledgerId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  ledger       Ledger          @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  transactions TransactionTag[]
+
+  @@unique([ledgerId, name])
+  @@index([ledgerId])
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  ledgerId    String
+  accountId   String
+  transferAccountId String?
+  categoryId  String?
+  type        TransactionType
+  occurredAt  DateTime
+  amountCents Int
+  description String?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  ledger  Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  account Account  @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Cascade)
+  transferAccount Account? @relation("TransferAccountTransactions", fields: [transferAccountId], references: [id], onDelete: SetNull)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags     TransactionTag[]
+
+  @@index([ledgerId, occurredAt])
+  @@index([accountId, occurredAt])
+  @@index([categoryId])
+}
+
+model TransactionTag {
+  transactionId String
+  tagId         String
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([transactionId, tagId])
+  @@index([tagId])
+}
+
+model ScheduledItem {
+  id            String              @id @default(cuid())
+  ledgerId      String
+  accountId     String
+  transferAccountId String?
+  categoryId    String?
+  name          String
+  amountCents   Int
+  frequency     RecurrenceFrequency @default(monthly)
+  interval      Int                 @default(1)
+  weekdays      Int[]               @default([])
+  monthDays     Int[]               @default([])
+  startDate     DateTime
+  endDate       DateTime?
+  timezone      String              @default("Asia/Hong_Kong")
+  isActive      Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  ledger   Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  account  Account  @relation("AccountScheduledItems", fields: [accountId], references: [id], onDelete: Cascade)
+  transferAccount Account? @relation("TransferAccountScheduledItems", fields: [transferAccountId], references: [id], onDelete: SetNull)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([ledgerId, isActive])
+  @@index([accountId])
+  @@index([startDate])
+}
+
+model Asset {
+  id             String    @id @default(cuid())
+  ledgerId       String
+  type           AssetType @default(other)
+  name           String
+  currentValueCents Int
+  asOfDate       DateTime
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  ledger Ledger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+
+  @@index([ledgerId, asOfDate])
+}
+
+model Liability {
+  id            String        @id @default(cuid())
+  ledgerId      String
+  type          LiabilityType @default(other)
+  name          String
+  principalCents Int
+  interestRateBps Int?
+  paymentCents  Int?
+  startDate     DateTime?
+  endDate       DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  ledger Ledger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+
+  @@index([ledgerId])
+}
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  ledgerId  String
+  name      String
+  plate     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ledger   Ledger          @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  expenses VehicleExpense[]
+
+  @@index([ledgerId])
+}
+
+model VehicleExpense {
+  id        String             @id @default(cuid())
+  ledgerId  String
+  vehicleId String?
+  type      VehicleExpenseType @default(other)
+  occurredAt DateTime
+  amountCents Int
+  notes     String?
+  createdAt DateTime @default(now())
+
+  ledger  Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  @@index([ledgerId, occurredAt])
+  @@index([vehicleId])
+}
+
+model BusinessProfile {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model TaxYear {
+  id        String   @id @default(cuid())
+  userId    String
+  startDate DateTime
+  endDate   DateTime
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile     TaxProfile?
+  deductions  TaxDeduction[]
+  allowances  TaxAllowance[]
+  draft       TaxAssessmentDraft?
+
+  @@unique([userId, label])
+  @@index([userId, startDate])
+}
+
+model TaxProfile {
+  id          String        @id @default(cuid())
+  taxYearId   String        @unique
+  maritalStatus MaritalStatus @default(single)
+  dependents  Int           @default(0)
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  taxYear TaxYear @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+}
+
+model TaxDeduction {
+  id        String           @id @default(cuid())
+  taxYearId String
+  type      TaxDeductionType
+  amountCents Int
+  notes     String?
+  createdAt DateTime @default(now())
+
+  taxYear TaxYear @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+
+  @@index([taxYearId])
+}
+
+model TaxAllowance {
+  id        String           @id @default(cuid())
+  taxYearId String
+  type      TaxAllowanceType
+  amountCents Int
+  notes     String?
+  createdAt DateTime @default(now())
+
+  taxYear TaxYear @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+
+  @@index([taxYearId])
+}
+
+model TaxAssessmentDraft {
+  id        String   @id @default(cuid())
+  taxYearId String   @unique
+  employmentIncomeCents Int @default(0)
+  businessProfitCents   Int @default(0)
+  otherIncomeCents      Int @default(0)
+  totalIncomeCents      Int @default(0)
+  totalDeductionCents   Int @default(0)
+  totalAllowanceCents   Int @default(0)
+  netChargeableCents    Int @default(0)
+  taxPayableCents       Int @default(0)
+  provisionalTaxPayableCents Int @default(0)
+  installments Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  taxYear TaxYear @relation(fields: [taxYearId], references: [id], onDelete: Cascade)
+}
+
