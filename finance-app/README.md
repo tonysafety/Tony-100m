@@ -33,4 +33,11 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
+### Monorepo 注意事項（本 repo）
+
+本專案的 Next.js app 在 `finance-app/` 子資料夾內。如果你在 Vercel 看到類似 `404: NOT_FOUND Code: NOT_FOUND ID: hkg1::...`：
+
+- **請確認 Vercel Project 的 Root Directory** 設成 `finance-app/`
+- **或** 直接使用 repo 根目錄的 `vercel.json`（已設定用 `finance-app/package.json` 作為 Next.js build 入口）
+
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
